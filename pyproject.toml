@@ -1,7 +1,7 @@
 [project]
 name = "playclone"
 version = "0.1.0"
-description = "Add your description here"
+description = "Clone playlists and liked songs between Spotify and YouTube Music"
 readme = "README.md"
 authors = [
     { name = "YajatGhule", email = "287946878+YajatGhule@users.noreply.github.com" }
@@ -11,6 +11,9 @@ dependencies = [
     "spotipy>=2.26.0",
     "ytmusicapi>=1.12.3",
 ]
+
+[project.scripts]
+playclone = "playclone.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]

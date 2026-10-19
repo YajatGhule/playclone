@@ -1,0 +1,22 @@
+[project]
+name = "playclone"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "YajatGhule", email = "287946878+YajatGhule@users.noreply.github.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "spotipy>=2.26.0",
+    "ytmusicapi>=1.12.3",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

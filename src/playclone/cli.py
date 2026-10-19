@@ -118,9 +118,20 @@ def cmd_clone(args) -> None:
     _report(results, Path(args.report) if args.report else None, args.dry_run)
 
 
+def cmd_ui(args) -> None:
+    from .server import serve
+
+    serve(port=args.port, open_browser=not args.no_browser)
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="playclone", description="Clone playlists between Spotify and YouTube Music.")
-    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub = ap.add_subparsers(dest="cmd")
+
+    u = sub.add_parser("ui", help="open the web app (default when no command is given)")
+    u.add_argument("--port", type=int, default=8888, help="local port (Spotify redirect URI must match; default 8888)")
+    u.add_argument("--no-browser", action="store_true", help="don't open a browser tab")
+    u.set_defaults(func=cmd_ui)
 
     a = sub.add_parser("auth", help="sign in to a service")
     a.add_argument("service", choices=NAMES)
@@ -148,7 +159,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    args = build_parser().parse_args(argv)
+    argv = sys.argv[1:] if argv is None else argv
+    args = build_parser().parse_args(argv or ["ui"])
     try:
         args.func(args)
     except KeyboardInterrupt:

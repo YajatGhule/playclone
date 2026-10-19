@@ -19,10 +19,11 @@ def _client_id() -> str:
     return cid
 
 
-def make_auth(open_browser: bool = True) -> spotipy.SpotifyPKCE:
+def make_auth(open_browser: bool = True, redirect_uri: str | None = None) -> spotipy.SpotifyPKCE:
     return spotipy.SpotifyPKCE(
         client_id=_client_id(),
-        redirect_uri=os.environ.get("SPOTIFY_REDIRECT_URI") or load_settings().get("spotify_redirect_uri") or DEFAULT_REDIRECT,
+        redirect_uri=redirect_uri or os.environ.get("SPOTIFY_REDIRECT_URI")
+        or load_settings().get("spotify_redirect_uri") or DEFAULT_REDIRECT,
         scope=SCOPES,
         cache_handler=CacheFileHandler(cache_path=str(config_dir() / "spotify-token.json")),
         open_browser=open_browser,

@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>playclone</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%236d5dfc'/><path d='M10 9h9a5 5 0 0 1 0 10h-5v5h-4zm4 4v2h5a1 1 0 0 0 0-2z' fill='white'/></svg>">
+<style>
+:root {
+  --bg: #f6f6f9; --surface: #ffffff; --surface-2: #f1f1f6; --border: #e3e3ec;
+  --text: #17171c; --muted: #6b6b7b; --faint: #9a9aab;
+  --accent: #5b4cf0; --accent-soft: #ecebfe; --accent-text: #ffffff;
+  --ok: #157f3c; --ok-soft: #e3f5e9; --warn: #9a5b00; --warn-soft: #fdf1dc; --bad: #b42318; --bad-soft: #fde8e6;
+  --spotify: #1db954; --ytmusic: #ff0033;
+  --shadow: 0 1px 2px rgb(20 20 40 / .05), 0 4px 16px rgb(20 20 40 / .05);
+  --radius: 14px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f0f14; --surface: #18181f; --surface-2: #20202a; --border: #2c2c38;
+    --text: #ececf3; --muted: #a0a0b2; --faint: #6e6e80;
+    --accent: #8b80ff; --accent-soft: #26234a; --accent-text: #0f0f14;
+    --ok: #4ade80; --ok-soft: #14301f; --warn: #f5b84a; --warn-soft: #362810; --bad: #ff7a6b; --bad-soft: #3a1714;
+    --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 4px 16px rgb(0 0 0 / .25);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f0f14; --surface: #18181f; --surface-2: #20202a; --border: #2c2c38;
+  --text: #ececf3; --muted: #a0a0b2; --faint: #6e6e80;
+  --accent: #8b80ff; --accent-soft: #26234a; --accent-text: #0f0f14;
+  --ok: #4ade80; --ok-soft: #14301f; --warn: #f5b84a; --warn-soft: #362810; --bad: #ff7a6b; --bad-soft: #3a1714;
+  --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 4px 16px rgb(0 0 0 / .25);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Inter", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 980px; margin: 0 auto; padding: 28px 16px 120px; }
+header.top { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+.logo { width: 36px; height: 36px; border-radius: 10px; background: var(--accent); display: grid; place-items: center; color: #fff; font-weight: 800; }
+header.top h1 { font-size: 20px; margin: 0; letter-spacing: -.01em; }
+header.top p { margin: 0; color: var(--muted); font-size: 13px; }
+header.top .spacer { flex: 1; }
+
+section.step { margin-bottom: 28px; }
+.step-head { display: flex; align-items: baseline; gap: 10px; margin: 0 0 12px; }
+.step-num { width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 13px; display: inline-grid; place-items: center; flex: none; transform: translateY(-1px); }
+.step-head h2 { font-size: 16px; margin: 0; }
+.step-head .hint { color: var(--muted); font-size: 13px; }
+.step.locked { opacity: .5; pointer-events: none; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+
+.acct { padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.acct-head { display: flex; align-items: center; gap: 10px; }
+.svc-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.svc-dot.spotify { background: var(--spotify); } .svc-dot.ytmusic { background: var(--ytmusic); }
+.acct-head strong { font-size: 15px; }
+.pill { margin-left: auto; font-size: 12px; padding: 2px 9px; border-radius: 99px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.acct p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.acct ol { margin: 0; padding-left: 20px; color: var(--muted); font-size: 13.5px; display: grid; gap: 4px; }
+.acct ol b { color: var(--text); font-weight: 600; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+button, .btn {
+  font: inherit; font-size: 14px; font-weight: 600; border-radius: 10px; padding: 8px 14px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); text-decoration: none;
+  display: inline-flex; align-items: center; gap: 6px; transition: background .15s, border-color .15s, opacity .15s;
+}
+button:hover:not(:disabled), .btn:hover { background: var(--surface-2); }
+button.primary, .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+button.primary:hover:not(:disabled), .btn.primary:hover { background: var(--accent); opacity: .9; }
+button.ghost { border-color: transparent; background: transparent; color: var(--muted); padding: 6px 8px; }
+button.ghost:hover:not(:disabled) { color: var(--text); background: var(--surface-2); }
+button.small { font-size: 13px; padding: 5px 10px; border-radius: 8px; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+input[type=text], input[type=search], textarea, select {
+  font: inherit; font-size: 14px; color: var(--text); background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 8px 11px; min-width: 0;
+}
+input[type=text], input[type=search] { flex: 1; }
+textarea { width: 100%; min-height: 120px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; resize: vertical; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; background: var(--surface-2); padding: 1px 6px; border-radius: 6px; word-break: break-all; }
+
+/* picker */
+.picker { padding: 0; overflow: hidden; }
+.direction { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.svc-select { display: flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 10px; background: var(--surface-2); font-weight: 600; font-size: 14px; }
+.direction .label { color: var(--muted); font-size: 13px; }
+.toolbar { display: flex; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); align-items: center; flex-wrap: wrap; }
+.plist { max-height: 380px; overflow: auto; }
+.pitem { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.pitem:last-child { border-bottom: 0; }
+.pitem:hover { background: var(--surface-2); }
+.pitem input { width: 17px; height: 17px; accent-color: var(--accent); flex: none; }
+.pitem .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pitem .count { color: var(--faint); font-size: 13px; font-variant-numeric: tabular-nums; }
+.heart { color: var(--accent); }
+.foot { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+.foot .spacer { flex: 1; }
+.slider { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+.slider input { accent-color: var(--accent); width: 140px; }
+.empty { padding: 28px 16px; text-align: center; color: var(--muted); font-size: 14px; }
+
+/* review */
+.plcard { margin-bottom: 14px; overflow: hidden; }
+.plhead { padding: 14px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+.plhead .title { flex: 1; display: flex; flex-direction: column; gap: 6px; min-width: 220px; }
+.plhead .src { font-size: 12.5px; color: var(--muted); }
+.plhead input.newname { font-weight: 600; font-size: 15px; }
+.stats { display: flex; gap: 6px; flex-wrap: wrap; }
+.stat { font-size: 12.5px; padding: 3px 9px; border-radius: 99px; background: var(--surface-2); color: var(--muted); font-variant-numeric: tabular-nums; }
+.stat.ok { background: var(--ok-soft); color: var(--ok); } .stat.warn { background: var(--warn-soft); color: var(--warn); } .stat.bad { background: var(--bad-soft); color: var(--bad); }
+.progress { height: 6px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin: 0 16px 14px; }
+.progress > div { height: 100%; background: var(--accent); border-radius: 99px; transition: width .3s; }
+.status-line { padding: 12px 16px 6px; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tabs { display: flex; gap: 4px; padding: 10px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.tabs button { font-weight: 500; }
+.tabs button[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.tracks { max-height: 520px; overflow: auto; }
+.trow { display: grid; grid-template-columns: 26px minmax(0,1fr) 18px minmax(0,1fr) 54px; gap: 10px; align-items: center; padding: 9px 16px; border-bottom: 1px solid var(--border); }
+.trow:last-child { border-bottom: 0; }
+.trow.off .t { opacity: .45; }
+.trow input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+.t { min-width: 0; }
+.t .tt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+.t .ta { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; color: var(--muted); }
+.arrow { color: var(--faint); text-align: center; }
+.nomatch { color: var(--bad); font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.score { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.score.hi { color: var(--ok); } .score.mid { color: var(--warn); } .score.lo { color: var(--bad); }
+.manual { font-size: 11px; color: var(--accent); }
+.finder { grid-column: 2 / -1; display: flex; flex-direction: column; gap: 8px; padding: 8px 0 4px; }
+.results { display: grid; gap: 4px; }
+.results button { justify-content: flex-start; text-align: left; font-weight: 400; width: 100%; padding: 7px 10px; }
+.results .r-meta { color: var(--muted); font-size: 12.5px; margin-left: auto; white-space: nowrap; }
+.results .r-main { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) {
+  .trow { grid-template-columns: 22px minmax(0,1fr) 44px; }
+  .trow .arrow { display: none; }
+  .trow .t.target { grid-column: 2 / 3; grid-row: 2; }
+  .trow .score { grid-row: 1 / 3; grid-column: 3; }
+}
+
+.done { padding: 14px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.done .ok { color: var(--ok); font-weight: 600; }
+.done .err { color: var(--bad); }
+
+.actionbar {
+  position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px; background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(10px); border-top: 1px solid var(--border); display: none; z-index: 5;
+}
+.actionbar.show { display: block; }
+.actionbar .inner { max-width: 980px; margin: 0 auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.actionbar .summary { flex: 1; color: var(--muted); font-size: 14px; min-width: 180px; }
+.actionbar .summary b { color: var(--text); }
+
+.toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); max-width: min(560px, calc(100% - 32px));
+  background: var(--bad-soft); color: var(--bad); border: 1px solid color-mix(in srgb, var(--bad) 30%, transparent);
+  padding: 10px 14px; border-radius: 10px; font-size: 14px; box-shadow: var(--shadow); z-index: 10; display: none; }
+.toast.info { background: var(--ok-soft); color: var(--ok); border-color: color-mix(in srgb, var(--ok) 30%, transparent); }
+.toast.show { display: block; }
+.spin { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+</style>
+</head>
+<body>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="wrap">
+  <header class="top">
+    <div class="logo" aria-hidden="true">p</div>
+    <div>
+      <h1>playclone</h1>
+      <p>Copy playlists between Spotify and YouTube Music</p>
+    </div>
+    <div class="spacer"></div>
+    <button class="ghost" id="themeBtn" title="Toggle theme" aria-label="Toggle theme"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg></button>
+  </header>
+
+  <section class="step" id="stepAccounts">
+    <div class="step-head"><span class="step-num">1</span><h2>Connect your accounts</h2></div>
+    <div class="grid2">
+      <div class="card acct" id="acct-spotify"></div>
+      <div class="card acct" id="acct-ytmusic"></div>
+    </div>
+  </section>
+
+  <section class="step" id="stepPick">
+    <div class="step-head"><span class="step-num">2</span><h2>Pick playlists</h2><span class="hint" id="pickHint"></span></div>
+    <div class="card picker" id="picker"></div>
+  </section>
+
+  <section class="step" id="stepReview" hidden>
+    <div class="step-head"><span class="step-num">3</span><h2 id="reviewTitle">Review matches</h2><span class="hint" id="reviewHint"></span></div>
+    <div id="review"></div>
+  </section>
+</div>
+
+<div class="actionbar" id="actionbar"><div class="inner">
+  <div class="summary" id="actionSummary"></div>
+  <button class="ghost" id="startOver">Start over</button>
+  <button class="primary" id="createBtn">Create playlists</button>
+</div></div>
+
+<script>
+"use strict";
+const NAMES = { spotify: "Spotify", ytmusic: "YouTube Music" };
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmtDur = s => s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "";
+const artists = t => (t.artists || []).join(", ");
+
+async function api(path, body) {
+  const opts = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const r = await fetch(path, opts);
+  const data = await r.json().catch(() => ({ error: r.statusText }));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+
+let toastTimer;
+function toast(msg, kind = "error") {
+  const el = $("#toast");
+  el.textContent = msg; el.className = `toast show ${kind === "info" ? "info" : ""}`;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.className = "toast", kind === "info" ? 3500 : 7000);
+}
+
+const S = {
+  status: null, src: "spotify", dst: "ytmusic",
+  playlists: {}, loadingLists: false, selected: new Set(), filter: "", threshold: 0.75,
+  ytOpen: false, spEditing: false,
+  job: null, review: [], // per playlist: {include: bool[], override: {}, tab, finder: {i, q, results, loading}}
+};
+try { const t = localStorage.getItem("pc-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
+$("#themeBtn").onclick = () => {
+  const dark = document.documentElement.dataset.theme
+    ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = dark ? "light" : "dark";
+  try { localStorage.setItem("pc-theme", document.documentElement.dataset.theme); } catch {}
+};
+
+/* ---------- accounts ---------- */
+function connected(svc) { return !!S.status?.[svc]?.signed_in; }
+
+function renderAccounts() {
+  const sp = S.status.spotify, yt = S.status.ytmusic;
+  const spEl = $("#acct-spotify");
+  const spHead = `<div class="acct-head"><span class="svc-dot spotify"></span><strong>Spotify</strong>
+    <span class="pill ${sp.signed_in ? "ok" : ""}">${sp.signed_in ? "Connected" : "Not connected"}</span></div>`;
+  if (sp.signed_in) {
+    spEl.innerHTML = `${spHead}<p>Signed in as <b>${esc(sp.user)}</b>.</p>
+      <div class="row"><button class="small" data-logout="spotify">Disconnect</button></div>`;
+  } else if (!sp.client_id || S.spEditing) {
+    spEl.innerHTML = `${spHead}
+      <ol>
+        <li>Create an app at <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener">developer.spotify.com/dashboard</a> and tick <b>Web API</b>.</li>
+        <li>Add this redirect URI: <code>${esc(sp.redirect_uri)}</code> <button class="ghost small" id="copyRedirect">Copy</button></li>
+        <li>Under <b>User Management</b>, add the email of your Spotify account.</li>
+        <li>Paste the app's <b>Client ID</b> here:</li>
+      </ol>
+      <form class="row" id="spForm"><input type="text" id="spClient" placeholder="Client ID" value="${esc(sp.client_id)}" autocomplete="off" spellcheck="false" aria-label="Spotify client ID">
+        <button class="primary" type="submit">Save</button></form>`;
+    $("#copyRedirect").onclick = () => navigator.clipboard?.writeText(sp.redirect_uri).then(() => toast("Redirect URI copied", "info"));
+    $("#spForm").onsubmit = async e => {
+      e.preventDefault();
+      try { S.status = await api("/api/spotify/client-id", { client_id: $("#spClient").value }); S.spEditing = false; render(); }
+      catch (err) { toast(err.message); }
+    };
+  } else {
+    spEl.innerHTML = `${spHead}<p>${sp.error ? esc(sp.error) : "Sign in with Spotify to let playclone read and create your playlists."}</p>
+      <div class="row"><a class="btn primary" href="/api/spotify/login">Connect Spotify</a>
+      <button class="ghost small" id="spEdit">Change client ID</button></div>`;
+    $("#spEdit").onclick = () => { S.spEditing = true; renderAccounts(); };
+  }
+
+  const ytEl = $("#acct-ytmusic");
+  const ytHead = `<div class="acct-head"><span class="svc-dot ytmusic"></span><strong>YouTube Music</strong>
+    <span class="pill ${yt.signed_in ? "ok" : ""}">${yt.signed_in ? "Connected" : "Not connected"}</span></div>`;
+  if (yt.signed_in) {
+    ytEl.innerHTML = `${ytHead}<p>Using your saved browser session.</p>
+      <div class="row"><button class="small" data-logout="ytmusic">Disconnect</button></div>`;
+  } else if (!S.ytOpen) {
+    ytEl.innerHTML = `${ytHead}<p>YouTube Music has no public sign-in for apps, so playclone uses your browser session's request headers. They stay on this computer.</p>
+      <div class="row"><button class="primary" id="ytOpen">Connect YouTube Music</button></div>`;
+    $("#ytOpen").onclick = () => { S.ytOpen = true; renderAccounts(); };
+  } else {
+    ytEl.innerHTML = `${ytHead}
+      <ol>
+        <li>Open <a href="https://music.youtube.com" target="_blank" rel="noopener">music.youtube.com</a> signed in, then DevTools (<b>F12</b>) → <b>Network</b>.</li>
+        <li>Filter for <code>browse</code> and click around until a <b>POST</b> request appears. Click it.</li>
+        <li>Copy its <b>request headers</b>. Firefox: turn on <b>Raw</b>. Chrome: right-click → Copy → <b>Copy request headers</b>.</li>
+      </ol>
+      <textarea id="ytHeaders" placeholder="Paste request headers here (must include the Cookie line)" spellcheck="false" aria-label="YouTube Music request headers"></textarea>
+      <div class="row"><button class="primary" id="ytSave">Connect</button><button class="ghost small" id="ytCancel">Cancel</button></div>`;
+    $("#ytCancel").onclick = () => { S.ytOpen = false; renderAccounts(); };
+    $("#ytSave").onclick = async e => {
+      const btn = e.currentTarget; btn.disabled = true; btn.innerHTML = `<span class="spin"></span> Checking…`;
+      try {
+        const r = await api("/api/ytmusic/login", { headers: $("#ytHeaders").value });
+        S.ytOpen = false; toast(`YouTube Music connected (${r.playlists} playlists)`, "info"); await refreshStatus();
+      } catch (err) { toast(err.message); btn.disabled = false; btn.textContent = "Connect"; }
+    };
+  }
+  document.querySelectorAll("[data-logout]").forEach(b => b.onclick = async () => {
+    const svc = b.dataset.logout;
+    try { S.status = await api("/api/logout", { service: svc }); delete S.playlists[svc]; render(); } catch (err) { toast(err.message); }
+  });
+}
+
+/* ---------- picker ---------- */
+async function loadPlaylists(force = false) {
+  const svc = S.src;
+  if (!connected(svc) || S.loadingLists || (S.playlists[svc] && !force)) return;
+  S.loadingLists = true; renderPicker();
+  try { S.playlists[svc] = await api(`/api/playlists?service=${svc}`); }
+  catch (err) { toast(err.message); }
+  finally { S.loadingLists = false; renderPicker(); }
+}
+
+function renderPicker() {
+  const both = connected("spotify") && connected("ytmusic");
+  $("#stepPick").classList.toggle("locked", !both);
+  $("#pickHint").textContent = both ? "" : "Connect both services first";
+  const el = $("#picker");
+  const lists = S.playlists[S.src];
+  const f = S.filter.toLowerCase();
+  const shown = (lists || []).filter(p => !f || p.name.toLowerCase().includes(f));
+  const busy = S.job && ["matching", "creating"].includes(S.job.status);
+
+  let body;
+  if (!both) body = `<div class="empty">Your playlists will show up here.</div>`;
+  else if (!lists) body = `<div class="empty"><span class="spin"></span>&nbsp; Loading ${NAMES[S.src]} playlists…</div>`;
+  else if (!shown.length) body = `<div class="empty">No playlists match “${esc(S.filter)}”.</div>`;
+  else body = shown.map(p => `<label class="pitem">
+      <input type="checkbox" data-pid="${esc(p.id)}" ${S.selected.has(p.id) ? "checked" : ""}>
+      <span class="name">${p.liked ? '<span class="heart">♥</span> ' : ""}${esc(p.name)}</span>
+      <span class="count">${p.count != null ? p.count + " tracks" : ""}</span></label>`).join("");
+
+  el.innerHTML = `
+    <div class="direction">
+      <span class="label">From</span><span class="svc-select"><span class="svc-dot ${S.src}"></span>${NAMES[S.src]}</span>
+      <button class="ghost" id="swap" title="Swap direction" aria-label="Swap direction">⇄</button>
+      <span class="label">to</span><span class="svc-select"><span class="svc-dot ${S.dst}"></span>${NAMES[S.dst]}</span>
+    </div>
+    <div class="toolbar">
+      <input type="search" id="filter" placeholder="Filter playlists" value="${esc(S.filter)}" aria-label="Filter playlists">
+      <button class="small" id="selAll">Select all</button>
+      <button class="small ghost" id="selNone">Clear</button>
+      <button class="small ghost" id="reload" title="Reload playlists" aria-label="Reload playlists">↻</button>
+    </div>
+    <div class="plist">${body}</div>
+    <div class="foot">
+      <label class="slider" title="How sure playclone must be before it accepts a match">Match strictness
+        <input type="range" id="thr" min="0.6" max="0.95" step="0.05" value="${S.threshold}"><b id="thrVal">${Math.round(S.threshold * 100)}%</b></label>
+      <div class="spacer"></div>
+      <span class="hint" style="color:var(--muted);font-size:13px">${S.selected.size} selected</span>
+      <button class="primary" id="matchBtn" ${!S.selected.size || busy ? "disabled" : ""}>${busy && S.job.status === "matching" ? '<span class="spin"></span> Matching…' : "Find matches"}</button>
+    </div>`;
+
+  $("#swap").onclick = () => { [S.src, S.dst] = [S.dst, S.src]; S.selected.clear(); S.filter = ""; renderPicker(); loadPlaylists(); };
+  const fi = $("#filter");
+  fi.oninput = () => { S.filter = fi.value; const pos = fi.selectionStart; renderPicker(); const n = $("#filter"); n.focus(); n.setSelectionRange(pos, pos); };
+  $("#selAll").onclick = () => { shown.forEach(p => S.selected.add(p.id)); renderPicker(); };
+  $("#selNone").onclick = () => { S.selected.clear(); renderPicker(); };
+  $("#reload").onclick = () => loadPlaylists(true);
+  $("#thr").oninput = e => { S.threshold = +e.target.value; $("#thrVal").textContent = Math.round(S.threshold * 100) + "%"; };
+  el.querySelectorAll("[data-pid]").forEach(cb => cb.onchange = () => {
+    cb.checked ? S.selected.add(cb.dataset.pid) : S.selected.delete(cb.dataset.pid);
+    $(".foot .hint", el).textContent = `${S.selected.size} selected`;
+    $("#matchBtn").disabled = !S.selected.size || busy;
+  });
+  $("#matchBtn").onclick = startJob;
+}
+
+/* ---------- job ---------- */
+async function startJob() {
+  const lists = S.playlists[S.src] || [];
+  const picks = lists.filter(p => S.selected.has(p.id)).map(p => ({ id: p.id, name: p.name, description: p.description || "" }));
+  try {
+    S.job = await api("/api/jobs", { src: S.src, dst: S.dst, playlists: picks, threshold: S.threshold });
+    S.review = []; render(); poll();
+    $("#stepReview").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (err) { toast(err.message); }
+}
+
+let pollTimer;
+async function poll() {
+  clearTimeout(pollTimer);
+  if (!S.job) return;
+  try {
+    const prev = S.job.status;
+    S.job = await api(`/api/jobs/${S.job.id}`);
+    if (S.job.status === "review" && prev !== "review") initReview();
+    renderReview(); renderPicker();
+    if (["matching", "creating"].includes(S.job.status)) pollTimer = setTimeout(poll, 600);
+    if (S.job.status === "error") toast(S.job.error);
+  } catch (err) { toast(err.message); }
+}
+
+function initReview() {
+  S.review = S.job.playlists.map(pl => ({
+    include: pl.matches.map(m => !!m.target), override: {}, tab: "all", name: pl.new_name, finder: null, enabled: pl.total > 0,
+  }));
+}
+
+function targetOf(pl, r, i) { return r.override[i] || pl.matches[i].target; }
+
+function scoreClass(s) { return s >= 0.9 ? "hi" : s >= 0.8 ? "mid" : "lo"; }
+
+function renderReview() {
+  const job = S.job, el = $("#review");
+  $("#stepReview").hidden = !job;
+  if (!job) { $("#actionbar").classList.remove("show"); return; }
+  const dst = NAMES[job.dst];
+  $("#reviewTitle").textContent = job.status === "done" ? "Done" : "Review matches";
+  $("#reviewHint").textContent = job.status === "review" ? `Untick anything you don't want, and use Find for songs playclone missed.` : "";
+
+  // keep scroll position + focus inside track lists across re-renders
+  const scrolls = [...el.querySelectorAll(".tracks")].map(t => t.scrollTop);
+  const active = document.activeElement?.id;
+
+  el.innerHTML = job.playlists.map((pl, pi) => {
+    const r = S.review[pi];
+    const total = pl.total ?? 0, done = pl.done;
+    if (job.status === "matching" || job.status === "error" && !r) {
+      const pct = total ? Math.round(done / total * 100) : 0;
+      const last = pl.matches[pl.matches.length - 1];
+      const stateTxt = { waiting: "Waiting…", loading: "Loading tracks…", matching: `Matching ${done} of ${total}`, matched: `Matched ${pl.matches.filter(m => m.target).length} of ${total}` }[pl.state] || pl.state;
+      return `<div class="card plcard"><div class="plhead"><div class="title"><strong>${esc(pl.name)}</strong>
+        <span class="src">${stateTxt}</span></div></div>
+        ${last && pl.state === "matching" ? `<div class="status-line">${last.target ? "✓" : "✗"} ${esc(artists(last.source))} - ${esc(last.source.title)}</div>` : ""}
+        <div class="progress" style="margin-top:12px"><div style="width:${pl.state === "matched" ? 100 : pct}%"></div></div></div>`;
+    }
+    if (job.status === "creating" || job.status === "done") {
+      const st = pl.state;
+      const line = st === "created"
+        ? `<span class="ok">✓ Created with ${pl.created_count} tracks</span><a class="btn primary" href="${esc(pl.url)}" target="_blank" rel="noopener">Open in ${dst} ↗</a>`
+        : st === "error" ? `<span class="err">Failed: ${esc(pl.error)}</span>`
+        : st === "skipped" ? `<span style="color:var(--muted)">Skipped</span>`
+        : `<span><span class="spin"></span>&nbsp; Creating…</span>`;
+      return `<div class="card plcard"><div class="plhead"><div class="title"><strong>${esc(pl.new_name)}</strong>
+        <span class="src">from ${esc(pl.name)} on ${NAMES[job.src]}</span></div></div><div class="done">${line}</div></div>`;
+    }
+    // review
+    const rows = pl.matches.map((m, i) => ({ m, i, t: targetOf(pl, r, i) }));
+    const unmatched = rows.filter(x => !x.t).length;
+    const unsure = rows.filter(x => x.t && !r.override[x.i] && x.m.score < 0.85).length;
+    const chosen = rows.filter(x => x.t && r.include[x.i]).length;
+    const visible = rows.filter(x => r.tab === "all" || (r.tab === "issues" ? !x.t || (!r.override[x.i] && x.m.score < 0.85) : !!x.t));
+    const tracks = visible.map(({ m, i, t }) => {
+      const finder = r.finder && r.finder.i === i ? `<div class="finder">
+          <form class="row" data-search="${pi}:${i}"><input type="search" id="find-${pi}-${i}" value="${esc(r.finder.q)}" aria-label="Search ${dst}"><button class="small primary">Search</button><button type="button" class="small ghost" data-closefind="${pi}">Close</button></form>
+          <div class="results">${r.finder.loading ? `<span style="color:var(--muted);font-size:13px"><span class="spin"></span> Searching ${dst}…</span>`
+            : (r.finder.results || []).map((c, ci) => `<button type="button" data-pick="${pi}:${i}:${ci}"><span class="r-main">${esc(c.title)} <span style="color:var(--muted)">· ${esc(artists(c))}</span></span><span class="r-meta">${fmtDur(c.duration_s)}</span></button>`).join("")
+              || (r.finder.results ? `<span style="color:var(--muted);font-size:13px">No results.</span>` : "")}</div></div>` : "";
+      return `<div class="trow ${t && r.include[i] ? "" : "off"}">
+        <input type="checkbox" data-inc="${pi}:${i}" ${t && r.include[i] ? "checked" : ""} ${t ? "" : "disabled"} aria-label="Include ${esc(m.source.title)}">
+        <div class="t"><div class="tt">${esc(m.source.title)}</div><div class="ta">${esc(artists(m.source))} ${m.source.duration_s ? "· " + fmtDur(m.source.duration_s) : ""}</div></div>
+        <div class="arrow">→</div>
+        ${t ? `<div class="t target"><div class="tt">${esc(t.title)} <button class="ghost small" data-find="${pi}:${i}" title="Pick a different match">change</button></div><div class="ta">${esc(artists(t))} ${t.duration_s ? "· " + fmtDur(t.duration_s) : ""}</div></div>`
+            : `<div class="t target nomatch">No match <button class="small" data-find="${pi}:${i}">Find</button></div>`}
+        <div class="score ${r.override[i] ? "" : t ? scoreClass(m.score) : "lo"}">${r.override[i] ? '<span class="manual">picked</span>' : t ? Math.round(m.score * 100) + "%" : "-"}</div>
+        ${finder}</div>`;
+    }).join("") || `<div class="empty">Nothing here.</div>`;
+
+    return `<div class="card plcard">
+      <div class="plhead">
+        <label class="row" style="flex:none"><input type="checkbox" data-plon="${pi}" ${r.enabled ? "checked" : ""} style="width:17px;height:17px;accent-color:var(--accent)" aria-label="Create this playlist"></label>
+        <div class="title"><span class="src">${esc(pl.name)} on ${NAMES[job.src]} → new private playlist on ${dst}:</span>
+          <input type="text" class="newname" id="name-${pi}" data-name="${pi}" value="${esc(r.name)}" aria-label="New playlist name"></div>
+        <div class="stats"><span class="stat ok">${chosen} adding</span>${unsure ? `<span class="stat warn">${unsure} unsure</span>` : ""}${unmatched ? `<span class="stat bad">${unmatched} not found</span>` : ""}</div>
+      </div>
+      <div class="tabs">
+        ${[["all", `All ${rows.length}`], ["issues", `Needs a look ${unmatched + unsure}`], ["matched", `Matched ${rows.length - unmatched}`]]
+          .map(([k, label]) => `<button class="small" data-tab="${pi}:${k}" aria-pressed="${r.tab === k}">${label}</button>`).join("")}
+      </div>
+      <div class="tracks">${tracks}</div></div>`;
+  }).join("");
+
+  el.querySelectorAll(".tracks").forEach((t, i) => t.scrollTop = scrolls[i] || 0);
+  if (active && document.getElementById(active)) { const a = document.getElementById(active); a.focus(); if (a.setSelectionRange) a.setSelectionRange(a.value.length, a.value.length); }
+  bindReview();
+  renderActionbar();
+}
+
+function bindReview() {
+  const el = $("#review");
+  const parse = s => s.split(":").map((x, k) => k < 2 ? +x : x);
+  el.querySelectorAll("[data-inc]").forEach(cb => cb.onchange = () => { const [pi, i] = parse(cb.dataset.inc); S.review[pi].include[i] = cb.checked; renderReview(); });
+  el.querySelectorAll("[data-plon]").forEach(cb => cb.onchange = () => { S.review[+cb.dataset.plon].enabled = cb.checked; renderActionbar(); });
+  el.querySelectorAll("[data-name]").forEach(inp => inp.oninput = () => { S.review[+inp.dataset.name].name = inp.value; });
+  el.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { const [pi, tab] = b.dataset.tab.split(":"); S.review[+pi].tab = tab; S.review[+pi].finder = null; renderReview(); });
+  el.querySelectorAll("[data-closefind]").forEach(b => b.onclick = () => { S.review[+b.dataset.closefind].finder = null; renderReview(); });
+  el.querySelectorAll("[data-find]").forEach(b => b.onclick = () => {
+    const [pi, i] = parse(b.dataset.find); const src = S.job.playlists[pi].matches[i].source;
+    S.review[pi].finder = { i, q: `${src.title} ${src.artists[0] || ""}`.trim(), results: null, loading: false };
+    renderReview(); runSearch(pi, i);
+  });
+  el.querySelectorAll("[data-search]").forEach(f => f.onsubmit = e => {
+    e.preventDefault(); const [pi, i] = parse(f.dataset.search);
+    S.review[pi].finder.q = $("input", f).value; runSearch(pi, i);
+  });
+  el.querySelectorAll("[data-pick]").forEach(b => b.onclick = () => {
+    const [pi, i, ci] = b.dataset.pick.split(":").map(Number); const r = S.review[pi];
+    r.override[i] = r.finder.results[ci]; r.include[i] = true; r.finder = null; renderReview();
+  });
+}
+
+async function runSearch(pi, i) {
+  const r = S.review[pi]; if (!r.finder) return;
+  r.finder.loading = true; renderReview();
+  try { r.finder.results = await api(`/api/search?service=${S.job.dst}&q=${encodeURIComponent(r.finder.q)}`); }
+  catch (err) { toast(err.message); r.finder.results = []; }
+  if (r.finder) { r.finder.loading = false; renderReview(); }
+}
+
+function plan() {
+  const playlists = [], manual = [];
+  let tracks = 0;
+  S.job.playlists.forEach((pl, pi) => {
+    const r = S.review[pi]; if (!r || !r.enabled) return;
+    const ids = [];
+    pl.matches.forEach((m, i) => {
+      const t = targetOf(pl, r, i);
+      if (t && r.include[i]) ids.push(t.id);
+      if (r.override[i]) manual.push({ source: m.source, target: r.override[i] });
+    });
+    if (!ids.length) return;
+    tracks += ids.length;
+    playlists.push({ index: pi, name: r.name, track_ids: ids });
+  });
+  return { playlists, manual, tracks };
+}
+
+function renderActionbar() {
+  const bar = $("#actionbar"), job = S.job;
+  bar.classList.toggle("show", !!job && job.status !== "matching");
+  if (!job) return;
+  const btn = $("#createBtn");
+  if (job.status === "review") {
+    const p = plan();
+    $("#actionSummary").innerHTML = `Create <b>${p.playlists.length}</b> private playlist${p.playlists.length === 1 ? "" : "s"} with <b>${p.tracks}</b> tracks on ${NAMES[job.dst]}`;
+    btn.hidden = false; btn.disabled = !p.playlists.length; btn.textContent = "Create playlists";
+  } else if (job.status === "creating") {
+    $("#actionSummary").innerHTML = `<span class="spin"></span>&nbsp; Creating playlists on ${NAMES[job.dst]}…`; btn.hidden = true;
+  } else if (job.status === "done") {
+    const ok = job.playlists.filter(p => p.state === "created").length;
+    $("#actionSummary").innerHTML = `<b>${ok}</b> playlist${ok === 1 ? "" : "s"} created on ${NAMES[job.dst]}.`; btn.hidden = true;
+  } else {
+    $("#actionSummary").textContent = "Something went wrong."; btn.hidden = true;
+  }
+}
+
+$("#createBtn").onclick = async () => {
+  const p = plan(); if (!p.playlists.length) return;
+  try { S.job = await api(`/api/jobs/${S.job.id}/create`, { playlists: p.playlists, manual: p.manual }); renderReview(); poll(); }
+  catch (err) { toast(err.message); }
+};
+$("#startOver").onclick = () => {
+  if (S.job?.status === "creating") return;
+  S.job = null; S.review = []; clearTimeout(pollTimer); render(); window.scrollTo({ top: 0, behavior: "smooth" });
+};
+
+/* ---------- boot ---------- */
+function render() { renderAccounts(); renderPicker(); renderReview(); }
+
+async function refreshStatus() {
+  try { S.status = await api("/api/status"); }
+  catch (err) { toast("Can't reach playclone. Is it still running?"); return; }
+  render(); loadPlaylists();
+}
+
+(function boot() {
+  const q = new URLSearchParams(location.search);
+  if (q.get("error")) toast(q.get("error"));
+  if (q.get("connected")) toast(`${NAMES[q.get("connected")] || "Account"} connected`, "info");
+  if (q.toString()) history.replaceState(null, "", "/");
+  refreshStatus();
+})();
+</script>
+</body>
+</html>

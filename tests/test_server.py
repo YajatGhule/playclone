@@ -53,7 +53,9 @@ def wait_for(base, job_id, status):
 def test_serves_page(server):
     _, base = server
     code, body = call(base + "/")
-    assert code == 200 and b"<title>playclone</title>" in body
+    assert code == 200 and b"<title>playclone</title>" in body and b'src="backend.js"' in body
+    code, js = call(base + "/backend.js")
+    assert code == 200 and b'mode: "local"' in js
 
 
 def test_rejects_foreign_host_origin_and_form_posts(server):

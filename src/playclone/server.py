@@ -82,7 +82,7 @@ class App:
         from .providers.ytmusic import auth_file
 
         yt = {"signed_in": auth_file().exists()}
-        return {"spotify": sp, "ytmusic": yt}
+        return {"mode": "local", "spotify": sp, "ytmusic": yt, "pending": []}
 
     def set_client_id(self, client_id: str) -> None:
         client_id = client_id.strip()
@@ -338,6 +338,9 @@ def make_handler(app: App):
                     self._send(200, page, "text/html; charset=utf-8",
                                {"Content-Security-Policy": "default-src 'self'; img-src 'self' data: https:; "
                                 "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'"})
+                elif path == "/backend.js":
+                    js = resources.files("playclone").joinpath("web/backend-local.js").read_bytes()
+                    self._send(200, js, "text/javascript; charset=utf-8")
                 elif path == "/api/status":
                     self._json(app.status())
                 elif path == "/api/spotify/login":

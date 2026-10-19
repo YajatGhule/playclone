@@ -154,6 +154,9 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1
   .trow .score { grid-row: 1 / 3; grid-column: 3; }
 }
 
+.quota { display: grid; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.quota b { color: var(--text); }
+.warnbox { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 10px 14px; font-size: 13.5px; margin-bottom: 14px; }
 .done { padding: 14px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .done .ok { color: var(--ok); font-weight: 600; }
 .done .err { color: var(--bad); }
@@ -203,6 +206,8 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1
     <div class="card picker" id="picker"></div>
   </section>
 
+  <div id="pending" hidden></div>
+
   <section class="step" id="stepReview" hidden>
     <div class="step-head"><span class="step-num">3</span><h2 id="reviewTitle">Review matches</h2><span class="hint" id="reviewHint"></span></div>
     <div id="review"></div>
@@ -215,6 +220,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1
   <button class="primary" id="createBtn">Create playlists</button>
 </div></div>
 
+<script src="backend.js"></script>
 <script>
 "use strict";
 const NAMES = { spotify: "Spotify", ytmusic: "YouTube Music" };
@@ -223,13 +229,9 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const fmtDur = s => s ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : "";
 const artists = t => (t.artists || []).join(", ");
 
-async function api(path, body) {
-  const opts = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
-  const r = await fetch(path, opts);
-  const data = await r.json().catch(() => ({ error: r.statusText }));
-  if (!r.ok) throw new Error(data.error || r.statusText);
-  return data;
-}
+const WEB = Backend.mode === "web";
+const api = (path, body) => Backend.api(path, body);
+window.addEventListener("backend-error", e => toast(e.detail));
 
 let toastTimer;
 function toast(msg, kind = "error") {
@@ -241,7 +243,7 @@ function toast(msg, kind = "error") {
 const S = {
   status: null, src: "spotify", dst: "ytmusic",
   playlists: {}, loadingLists: false, selected: new Set(), filter: "", threshold: 0.75,
-  ytOpen: false, spEditing: false,
+  ytOpen: false, spEditing: false, ytEditing: false,
   job: null, review: [], // per playlist: {include: bool[], override: {}, tab, finder: {i, q, results, loading}}
 };
 try { const t = localStorage.getItem("pc-theme"); if (t) document.documentElement.dataset.theme = t; } catch {}
@@ -281,15 +283,17 @@ function renderAccounts() {
     };
   } else {
     spEl.innerHTML = `${spHead}<p>${sp.error ? esc(sp.error) : "Sign in with Spotify to let playclone read and create your playlists."}</p>
-      <div class="row"><a class="btn primary" href="/api/spotify/login">Connect Spotify</a>
+      <div class="row"><button class="primary" id="spConnect">Connect Spotify</button>
       <button class="ghost small" id="spEdit">Change client ID</button></div>`;
+    $("#spConnect").onclick = () => Backend.connectSpotify();
     $("#spEdit").onclick = () => { S.spEditing = true; renderAccounts(); };
   }
 
   const ytEl = $("#acct-ytmusic");
   const ytHead = `<div class="acct-head"><span class="svc-dot ytmusic"></span><strong>YouTube Music</strong>
     <span class="pill ${yt.signed_in ? "ok" : ""}">${yt.signed_in ? "Connected" : "Not connected"}</span></div>`;
-  if (yt.signed_in) {
+  if (WEB) renderYouTubeWeb(ytEl, ytHead, yt);
+  else if (yt.signed_in) {
     ytEl.innerHTML = `${ytHead}<p>Using your saved browser session.</p>
       <div class="row"><button class="small" data-logout="ytmusic">Disconnect</button></div>`;
   } else if (!S.ytOpen) {
@@ -317,6 +321,64 @@ function renderAccounts() {
   document.querySelectorAll("[data-logout]").forEach(b => b.onclick = async () => {
     const svc = b.dataset.logout;
     try { S.status = await api("/api/logout", { service: svc }); delete S.playlists[svc]; render(); } catch (err) { toast(err.message); }
+  });
+}
+
+// GitHub Pages build: YouTube via the official Data API, with the visitor's own Google OAuth client.
+function renderYouTubeWeb(el, head, yt) {
+  const q = yt.quota, pct = Math.min(100, Math.round(q.used / q.limit * 100));
+  const meter = `<div class="quota"><div class="progress" style="margin:0"><div style="width:${pct}%;${pct > 85 ? "background:var(--bad)" : ""}"></div></div>
+    <span>About <b>${q.used.toLocaleString()}</b> of ${q.limit.toLocaleString()} daily API units used (resets at midnight Pacific).
+    Matching a song into YouTube costs about 150; copying from YouTube costs almost nothing.</span></div>`;
+  if (!yt.client_id || S.ytEditing) {
+    el.innerHTML = `${head}
+      <ol>
+        <li>In <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener">Google Cloud Console</a>, create a project and enable <b>YouTube Data API v3</b>.</li>
+        <li>Under <b>OAuth consent screen</b>, choose External and add your Google account as a <b>test user</b>.</li>
+        <li>Under <b>Credentials</b>, create an <b>OAuth client ID</b> of type <b>Web application</b> with this authorized JavaScript origin: <code>${esc(yt.origin)}</code> <button class="ghost small" id="copyOrigin">Copy</button></li>
+        <li>Paste the <b>Client ID</b> here:</li>
+      </ol>
+      <form class="row" id="gForm"><input type="text" id="gClient" placeholder="…apps.googleusercontent.com" value="${esc(yt.client_id)}" autocomplete="off" spellcheck="false" aria-label="Google client ID">
+        <button class="primary" type="submit">Save</button></form>`;
+    $("#copyOrigin").onclick = () => navigator.clipboard?.writeText(yt.origin).then(() => toast("Origin copied", "info"));
+    $("#gForm").onsubmit = async e => {
+      e.preventDefault();
+      try { S.status = await api("/api/google/client-id", { client_id: $("#gClient").value }); S.ytEditing = false; render(); }
+      catch (err) { toast(err.message); }
+    };
+  } else if (!yt.signed_in) {
+    el.innerHTML = `${head}<p>Sign in with Google to let playclone read and create your YouTube Music playlists. Sign-ins last an hour.</p>
+      <div class="row"><button class="primary" id="ytConnect">Connect YouTube Music</button>
+      <button class="ghost small" id="ytEdit">Change client ID</button></div>${meter}`;
+    $("#ytEdit").onclick = () => { S.ytEditing = true; renderAccounts(); };
+    $("#ytConnect").onclick = async () => {
+      try { await Backend.connectYouTube(); toast("YouTube Music connected", "info"); await refreshStatus(); }
+      catch (err) { toast(err.message); }
+    };
+  } else {
+    el.innerHTML = `${head}<p>Signed in with Google. The sign-in lasts an hour; reconnect if it runs out.</p>
+      <div class="row"><button class="small" data-logout="ytmusic">Disconnect</button></div>${meter}`;
+  }
+}
+
+function renderPending() {
+  const box = $("#pending"), list = S.status?.pending || [];
+  box.hidden = !list.length;
+  if (!list.length) return;
+  box.innerHTML = `<div class="card plcard"><div class="plhead"><div class="title"><strong>Unfinished playlists</strong>
+    <span class="src">These stopped partway, usually because YouTube's daily quota ran out. Resume once it resets.</span></div></div>
+    ${list.map((p, i) => `<div class="done"><span><b>${esc(p.name)}</b> on ${NAMES[p.service]}: ${p.added} of ${p.total} tracks added</span>
+      <button class="primary small" data-resume="${i}">Resume</button>
+      <a class="btn small" href="${esc(p.url)}" target="_blank" rel="noopener">Open ↗</a>
+      <button class="ghost small" data-dismiss="${i}">Dismiss</button></div>`).join("")}</div>`;
+  box.querySelectorAll("[data-resume]").forEach(b => b.onclick = async () => {
+    try {
+      S.job = await api("/api/pending/resume", { index: +b.dataset.resume });
+      S.review = []; S.status = await api("/api/status"); render(); poll();
+    } catch (err) { toast(err.message); }
+  });
+  box.querySelectorAll("[data-dismiss]").forEach(b => b.onclick = async () => {
+    try { S.status = await api("/api/pending/dismiss", { index: +b.dataset.dismiss }); renderPending(); } catch (err) { toast(err.message); }
   });
 }
 
@@ -404,6 +466,7 @@ async function poll() {
     const prev = S.job.status;
     S.job = await api(`/api/jobs/${S.job.id}`);
     if (S.job.status === "review" && prev !== "review") initReview();
+    if (WEB && S.job.status !== prev) { S.status = await api("/api/status"); renderAccounts(); renderPending(); } // quota meter
     renderReview(); renderPicker();
     if (["matching", "creating"].includes(S.job.status)) pollTimer = setTimeout(poll, 600);
     if (S.job.status === "error") toast(S.job.error);
@@ -432,7 +495,7 @@ function renderReview() {
   const scrolls = [...el.querySelectorAll(".tracks")].map(t => t.scrollTop);
   const active = document.activeElement?.id;
 
-  el.innerHTML = job.playlists.map((pl, pi) => {
+  el.innerHTML = (job.warning && job.status === "review" ? `<div class="warnbox">${esc(job.warning)}</div>` : "") + job.playlists.map((pl, pi) => {
     const r = S.review[pi];
     const total = pl.total ?? 0, done = pl.done;
     if (job.status === "matching" || job.status === "error" && !r) {
@@ -471,7 +534,7 @@ function renderReview() {
         <div class="t"><div class="tt">${esc(m.source.title)}</div><div class="ta">${esc(artists(m.source))} ${m.source.duration_s ? "· " + fmtDur(m.source.duration_s) : ""}</div></div>
         <div class="arrow">→</div>
         ${t ? `<div class="t target"><div class="tt">${esc(t.title)} <button class="ghost small" data-find="${pi}:${i}" title="Pick a different match">change</button></div><div class="ta">${esc(artists(t))} ${t.duration_s ? "· " + fmtDur(t.duration_s) : ""}</div></div>`
-            : `<div class="t target nomatch">No match <button class="small" data-find="${pi}:${i}">Find</button></div>`}
+            : `<div class="t target nomatch">${m.skipped ? "Not searched" : "No match"} <button class="small" data-find="${pi}:${i}">Find</button></div>`}
         <div class="score ${r.override[i] ? "" : t ? scoreClass(m.score) : "lo"}">${r.override[i] ? '<span class="manual">picked</span>' : t ? Math.round(m.score * 100) + "%" : "-"}</div>
         ${finder}</div>`;
     }).join("") || `<div class="empty">Nothing here.</div>`;
@@ -575,7 +638,7 @@ $("#startOver").onclick = () => {
 };
 
 /* ---------- boot ---------- */
-function render() { renderAccounts(); renderPicker(); renderReview(); }
+function render() { renderAccounts(); renderPending(); renderPicker(); renderReview(); }
 
 async function refreshStatus() {
   try { S.status = await api("/api/status"); }
@@ -583,11 +646,13 @@ async function refreshStatus() {
   render(); loadPlaylists();
 }
 
-(function boot() {
+(async function boot() {
+  if (WEB) $("header.top p").textContent = "Copy playlists between Spotify and YouTube Music. Runs entirely in your browser.";
+  await Backend.init?.();
   const q = new URLSearchParams(location.search);
   if (q.get("error")) toast(q.get("error"));
   if (q.get("connected")) toast(`${NAMES[q.get("connected")] || "Account"} connected`, "info");
-  if (q.toString()) history.replaceState(null, "", "/");
+  if (q.toString()) history.replaceState(null, "", location.pathname);
   refreshStatus();
 })();
 </script>

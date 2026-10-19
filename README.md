@@ -17,7 +17,35 @@ Uncertain matches are flagged for review, and songs it can't find are left out i
 replaced with the wrong song. New playlists are always **private**. Nothing on either account is
 ever deleted or modified.
 
-## Install and run
+## Two ways to use it
+
+| | **Online**: [yajatghule.github.io/playclone](https://yajatghule.github.io/playclone/) | **Local app**: `uv run playclone` |
+|---|---|---|
+| Install | Nothing, it runs in your browser | Python 3.12+ |
+| Spotify | Your own free Spotify app (Client ID) | Same |
+| YouTube Music | Official YouTube Data API: your own free Google OAuth client | Your browser session via ytmusicapi, no Google setup |
+| Limits | Google's free daily quota allows about **65 songs/day into YouTube**. Copying *from* YouTube is nearly free. | No daily limit |
+
+Both use the same interface. If a copy into YouTube stops when the daily quota runs out, the online
+version saves what's left under **Unfinished playlists** so you can resume after the reset (midnight
+Pacific). Matches are remembered, so nothing gets searched twice.
+
+### Online setup
+
+The page shows these steps when you open it.
+
+- **Spotify:** create an app at <https://developer.spotify.com/dashboard>, enable **Web API**, add
+  `https://yajatghule.github.io/playclone/` as a redirect URI, and add your email under **User Management**.
+  Paste the Client ID into the page.
+- **YouTube:** in Google Cloud Console, create a project and enable **YouTube Data API v3**. On the
+  OAuth consent screen, choose External and add yourself as a test user. Then create an **OAuth client ID**
+  (Web application) with `https://yajatghule.github.io` as an authorized JavaScript origin, and paste
+  its Client ID into the page.
+
+Client IDs and sign-in tokens are kept in your browser's local storage. The page only ever talks to
+Spotify and Google.
+
+## Install and run the local app
 
 ```sh
 git clone https://github.com/YajatGhule/playclone && cd playclone
@@ -70,7 +98,14 @@ uv run pytest
 - `src/playclone/providers/` has one adapter per service, each with four methods:
   `list_playlists`, `get_tracks`, `search` and `create_playlist`. Apple Music is planned as the next one.
 - `src/playclone/server.py` is the local JSON API, built on the standard-library HTTP server.
-- `src/playclone/web/index.html` is the whole front end, with no build step.
+- `src/playclone/web/index.html` is the whole front end, with no build step. It gets its data from
+  `backend.js`:
+  - the local app serves `web/backend-local.js`, which calls the Python server
+  - the GitHub Pages build ships `site/backend.js`, which does everything in the browser (Spotify PKCE,
+    YouTube Data API, a JS port of the matcher) behind the same `/api/*` routes
+- `.github/workflows/pages.yml` deploys the online version on every push to `main`.
+- `node --test tests/js/` tests the browser matcher, and `tests/test_js_parity.py` checks that it scores
+  the same as the Python matcher.
 
 The server only listens on 127.0.0.1. It rejects requests with a foreign `Host` or `Origin` and
 anything that isn't a JSON POST, so other websites can't drive it.

@@ -104,7 +104,7 @@ uv run pytest
   - the GitHub Pages build ships `site/backend.js`, which does everything in the browser (Spotify PKCE,
     YouTube Data API, a JS port of the matcher) behind the same `/api/*` routes
 - `.github/workflows/pages.yml` deploys the online version on every push to `main`.
-- `node --test tests/js/` tests the browser matcher, and `tests/test_js_parity.py` checks that it scores
+- `node --test tests/js/*.test.mjs` tests the browser matcher, and `tests/test_js_parity.py` checks that it scores
   the same as the Python matcher.
 
 The server only listens on 127.0.0.1. It rejects requests with a foreign `Host` or `Origin` and

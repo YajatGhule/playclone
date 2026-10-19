@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: 22
       - name: Test browser matcher
-        run: node --test tests/js/
+        run: node --test tests/js/*.test.mjs
       - name: Assemble site
         # Same front end as the local app, with the in-browser backend instead of the Python one.
         run: |

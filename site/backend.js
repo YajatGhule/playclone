@@ -251,6 +251,7 @@
         onAdded(chunk.length);
       }
     },
+    async listIds(pid) { return (await this.getTracks(pid)).map(t => t.id); },
     url: pid => `https://open.spotify.com/playlist/${pid}`,
   };
 
@@ -399,6 +400,9 @@
         onAdded(1);
       }
     },
+    async listIds(pid) { // ~1 unit per 50 songs: skips the video-details lookup getTracks does
+      return (await ytAll("playlistItems", { part: "contentDetails", playlistId: pid })).map(i => i.contentDetails?.videoId).filter(Boolean);
+    },
     url: pid => `https://music.youtube.com/playlist?list=${pid}`,
   };
 
@@ -410,6 +414,7 @@
 
   /* ---------- match cache ---------- */
   const cacheKey = (src, dst, t) => `${src}>${dst}:${t.id}`;
+  const cloneKey = (src, pid, dst) => `${src}:${pid}>${dst}`;
   let cache = null;
   const loadCache = () => cache ||= store.get("match-cache", {});
   const saveCache = () => store.set("match-cache", cache);
@@ -426,11 +431,13 @@
     if (!picks.length) throw new ApiError("Select at least one playlist.");
     const job = {
       id: newId(), src, dst, status: "matching", error: null, warning: null, threshold: +body.threshold || 0.75,
+      stop_requested: false, dst_playlists: [],
       playlists: picks.map(p => ({
         id: p.id, name: p.name,
         new_name: p.id === LIKED ? `Liked songs (from ${PRETTY[src]})` : p.name,
         description: p.description || `Cloned from ${PRETTY[src]} with playclone`,
         state: "waiting", total: null, done: 0, matches: [], playlist_id: null, url: null, error: null,
+        source_id: p.id, previous_id: null,
       })),
     };
     jobs.set(job.id, job);
@@ -442,12 +449,20 @@
     const src = provider(job.src), dst = provider(job.dst), c = loadCache();
     let quotaHit = false, sinceSave = 0;
     try {
+      job.dst_playlists = (await dst.listPlaylists()).map(p => ({ id: p.id, name: p.name }));
+      const clones = store.get("clones", {});
       for (const pl of job.playlists) {
+        const prev = clones[cloneKey(job.src, pl.id, job.dst)];
+        pl.previous_id = job.dst_playlists.some(p => p.id === prev) ? prev : null;
+      }
+      for (const pl of job.playlists) {
+        if (job.stop_requested) { pl.state = "stopped"; continue; }
         pl.state = "loading";
         const tracks = await src.getTracks(pl.id);
         pl.total = tracks.length;
         pl.state = "matching";
         for (const t of tracks) {
+          if (job.stop_requested) break;
           const key = cacheKey(job.src, job.dst, t);
           let m;
           if (c[key]) {
@@ -470,6 +485,12 @@
           pl.done++;
         }
         pl.state = "matched";
+      }
+      if (job.stop_requested) {
+        const left = job.playlists.reduce((n, pl) => n + (pl.total || 0) - pl.matches.length, 0);
+        const skipped = job.playlists.filter(pl => pl.state === "stopped").length;
+        const parts = [left && `${left} song${left === 1 ? "" : "s"}`, skipped && `${skipped} playlist${skipped === 1 ? "" : "s"}`].filter(Boolean);
+        job.warning = `Stopped early: ${parts.join(" and ") || "nothing"} weren't checked and will be left out.`;
       }
       if (quotaHit) {
         const skipped = job.playlists.reduce((n, pl) => n + pl.matches.filter(m => m.skipped).length, 0);
@@ -500,9 +521,21 @@
         if (!plan) { pl.state = "skipped"; continue; }
         const ids = [...new Set(plan.track_ids || [])];
         const name = (plan.name || pl.new_name).trim() || pl.new_name;
-        pl.new_name = name;
         pl.state = "creating";
-        await addToPlaylist(job, pl, dst, ids, null, 0);
+        if (plan.target_id) {
+          // Update an earlier copy: only add songs that aren't in it yet.
+          pl.new_name = job.dst_playlists.find(p => p.id === plan.target_id)?.name || name;
+          pl.updated = true;
+          try {
+            const existing = new Set(await dst.listIds(plan.target_id));
+            const fresh = ids.filter(id => !existing.has(id));
+            pl.already_there = ids.length - fresh.length;
+            await addToPlaylist(job, pl, dst, fresh, plan.target_id, 0);
+          } catch (e) { console.error(e); pl.state = "error"; pl.error = e.message; }
+        } else {
+          pl.new_name = name;
+          await addToPlaylist(job, pl, dst, ids, null, 0);
+        }
       }
       job.status = "done";
     })();
@@ -515,6 +548,11 @@
     try {
       if (!pid) pid = await dst.createEmpty(pl.new_name, pl.description);
       pl.playlist_id = pid;
+      if (pl.source_id) { // remember the copy so the next run can update it instead of duplicating
+        const clones = store.get("clones", {});
+        clones[cloneKey(job.src, pl.source_id, job.dst)] = pid;
+        store.set("clones", clones);
+      }
       pl.url = dst.url(pid);
       await dst.addItems(pid, ids, n => { added += n; pl.created_count = alreadyAdded + added; });
       pl.state = "created";
@@ -615,6 +653,13 @@
         return job;
       }
       if (p === "/api/pending/resume") return resumePending(+body.index);
+      const stop = /^\/api\/jobs\/([^/]+)\/stop$/.exec(p);
+      if (stop) {
+        const job = jobs.get(stop[1]);
+        if (!job) throw new ApiError("Unknown job", 404);
+        job.stop_requested = true;
+        return job;
+      }
       if (p === "/api/pending/dismiss") {
         const pending = store.get("pending", []);
         pending.splice(+body.index, 1);

@@ -4,7 +4,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .clone import MatchCache, clone_playlist
+from .clone import CloneMemory, MatchCache, clone_playlist
 from .config import config_dir, save_settings
 from .models import LIKED, CloneResult, Match, Playlist
 from .providers import NAMES, get_provider
@@ -80,7 +80,12 @@ def _report(results: list[CloneResult], path: Path | None, dry_run: bool) -> Non
     print()
     lines = []
     for r in results:
-        status = "would create" if dry_run else f"created {r.playlist_id}"
+        if dry_run:
+            status = "would add new songs to the earlier copy" if r.updated else "would create"
+        elif r.updated:
+            status = f"added {r.added} new to {r.playlist_id} ({r.already_there} already there)"
+        else:
+            status = f"created {r.playlist_id}"
         print(f"{r.name}: {len(r.matched)}/{len(r.matches)} matched, {status}")
         for m in r.unmatched:
             lines.append(f"{r.name}\t{m.source.label}\tbest={m.score:.2f}")
@@ -104,17 +109,23 @@ def cmd_clone(args) -> None:
         raise SystemExit("--name only works when cloning a single playlist")
 
     cache = MatchCache(None if args.no_cache else config_dir() / "match-cache.json")
+    memory = CloneMemory(config_dir() / "clones.json")
+    dst_ids = {p.id for p in dst.list_playlists()} if args.update else set()
     results = []
     for p in targets:
         name = args.name or p.name
-        print(f"\n{p.name} → {PRETTY[args.dst]} as {name!r}")
+        target = memory.get(args.src, p.id, args.dst) if args.update else None
+        if target not in dst_ids:  # never cloned before, or the copy was deleted
+            target = None
+        print(f"\n{p.name} → {PRETTY[args.dst]} " + (f"(updating {target})" if target else f"as {name!r}"))
         desc = p.description or f"Cloned from {PRETTY[args.src]} with playclone"
-        results.append(
-            clone_playlist(
-                src, dst, p.id, name, desc,
-                cache=cache, threshold=args.threshold, dry_run=args.dry_run, on_progress=_progress,
-            )
+        r = clone_playlist(
+            src, dst, p.id, name, desc,
+            cache=cache, threshold=args.threshold, dry_run=args.dry_run, on_progress=_progress, target_id=target,
         )
+        if r.playlist_id:
+            memory.put(args.src, p.id, args.dst, r.playlist_id)
+        results.append(r)
     _report(results, Path(args.report) if args.report else None, args.dry_run)
 
 
@@ -153,6 +164,8 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--dry-run", action="store_true", help="match tracks but don't create anything")
     c.add_argument("--threshold", type=float, default=0.75, help="minimum match score 0-1 (default 0.75)")
     c.add_argument("--report", default="unmatched.tsv", help="where to write unmatched tracks ('' to skip)")
+    c.add_argument("--update", action="store_true",
+                   help="if a playlist was cloned before, add only its new songs to that copy instead of making a new one")
     c.add_argument("--no-cache", action="store_true", help="ignore and don't update the match cache")
     c.set_defaults(func=cmd_clone)
     return ap

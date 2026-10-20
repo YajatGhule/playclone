@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from urllib.parse import parse_qs, urlparse
 
-from .clone import MatchCache, match_tracks
+from .clone import CloneMemory, MatchCache, add_missing, match_tracks
 from .config import config_dir, load_settings, save_settings
 from .models import LIKED, Match, Track
 from .providers import NAMES
@@ -201,7 +201,11 @@ class Job:
         self.app, self.src, self.dst, self.threshold = app, src, dst, threshold
         self.status = "matching"  # matching -> review -> creating -> done | error
         self.error: str | None = None
+        self.warning: str | None = None
+        self.stop_requested = False
         self.cache = MatchCache(config_dir() / "match-cache.json")
+        self.memory = CloneMemory(config_dir() / "clones.json")
+        self.dst_playlists: list[dict] = []
         self.lists = []
         for p in picks:
             liked = p["id"] == LIKED
@@ -211,13 +215,21 @@ class Job:
                 "new_name": f"Liked songs (from {PRETTY[src]})" if liked else p["name"],
                 "description": p.get("description") or f"Cloned from {PRETTY[src]} with playclone",
                 "state": "waiting", "total": None, "done": 0, "matches": [],
-                "playlist_id": None, "url": None, "error": None,
+                "playlist_id": None, "url": None, "error": None, "previous_id": None,
             })
 
     def run_matching(self) -> None:
         try:
             src, dst = self.app.provider(self.src), self.app.provider(self.dst)
+            self.dst_playlists = [{"id": p.id, "name": p.name} for p in dst.list_playlists()]
+            dst_ids = {p["id"] for p in self.dst_playlists}
             for pl in self.lists:
+                previous = self.memory.get(self.src, pl["id"], self.dst)
+                pl["previous_id"] = previous if previous in dst_ids else None
+            for pl in self.lists:
+                if self.stop_requested:
+                    pl["state"] = "stopped"
+                    continue
                 pl["state"] = "loading"
                 tracks = src.get_tracks(pl["id"])
                 pl["total"], pl["state"] = len(tracks), "matching"
@@ -227,8 +239,14 @@ class Job:
                     pl["matches"].append({"source": _track_json(m.source), "target": _track_json(m.target),
                                           "score": m.score})
 
-                match_tracks(tracks, src, dst, self.cache, self.threshold, progress)
+                match_tracks(tracks, src, dst, self.cache, self.threshold, progress, lambda: self.stop_requested)
                 pl["state"] = "matched"
+            if self.stop_requested:
+                left = sum((pl["total"] or 0) - len(pl["matches"]) for pl in self.lists)
+                skipped = sum(pl["state"] == "stopped" for pl in self.lists)
+                parts = [f"{left} song{'s' if left != 1 else ''}"] if left else []
+                parts += [f"{skipped} playlist{'s' if skipped != 1 else ''}"] if skipped else []
+                self.warning = f"Stopped early: {' and '.join(parts) or 'nothing'} weren't checked and will be left out."
             self.status = "review"
         except Exception as e:
             traceback.print_exc()
@@ -254,10 +272,18 @@ class Job:
                 continue
             ids = list(dict.fromkeys(plan.get("track_ids") or []))
             name = (plan.get("name") or pl["new_name"]).strip() or pl["new_name"]
+            target = plan.get("target_id")
             pl["state"] = "creating"
             try:
-                pl["playlist_id"] = dst.create_playlist(name, pl["description"], ids)
-                pl["url"], pl["new_name"], pl["created_count"] = playlist_url(self.dst, pl["playlist_id"]), name, len(ids)
+                if target:
+                    pl["created_count"], pl["already_there"] = add_missing(dst, target, ids)
+                    pl["playlist_id"], pl["updated"] = target, True
+                    pl["new_name"] = next((p["name"] for p in self.dst_playlists if p["id"] == target), name)
+                else:
+                    pl["playlist_id"] = dst.create_playlist(name, pl["description"], ids)
+                    pl["new_name"], pl["created_count"] = name, len(ids)
+                pl["url"] = playlist_url(self.dst, pl["playlist_id"])
+                self.memory.put(self.src, pl["id"], self.dst, pl["playlist_id"])
                 pl["state"] = "created"
             except Exception as e:
                 traceback.print_exc()
@@ -265,8 +291,8 @@ class Job:
         self.status = "done"
 
     def to_json(self) -> dict:
-        return {"id": self.id, "src": self.src, "dst": self.dst, "status": self.status,
-                "error": self.error, "playlists": self.lists}
+        return {"id": self.id, "src": self.src, "dst": self.dst, "status": self.status, "error": self.error,
+                "warning": self.warning, "dst_playlists": self.dst_playlists, "playlists": self.lists}
 
 
 def make_handler(app: App):
@@ -382,6 +408,10 @@ def make_handler(app: App):
                     self._json(app.status())
                 elif path == "/api/jobs":
                     self._json(app.start_job(body).to_json())
+                elif path.startswith("/api/jobs/") and path.endswith("/stop"):
+                    job = app.job(path.split("/")[3])
+                    job.stop_requested = True
+                    self._json(job.to_json())
                 elif path.startswith("/api/jobs/") and path.endswith("/create"):
                     job = app.job(path.split("/")[3])
                     job.create(body)

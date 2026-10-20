@@ -39,6 +39,9 @@ class CloneResult:
     name: str
     matches: list[Match] = field(default_factory=list)
     playlist_id: str | None = None
+    added: int = 0
+    already_there: int = 0
+    updated: bool = False  # added to an existing playlist instead of creating one
 
     @property
     def matched(self) -> list[Match]:

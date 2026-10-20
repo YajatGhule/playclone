@@ -10,6 +10,15 @@ local web app.
 3. **Review** the matches: untick anything you don't want, and use **Find** to search for songs
    playclone couldn't match by itself. Then hit **Create playlists**.
 
+**Copy again later without duplicates.** playclone remembers where each playlist was copied. The next
+time you copy it, the earlier copy is preselected and only the songs that aren't in it yet get added.
+You can also pick any existing playlist on the other service as the destination.
+
+Other handy bits:
+- **Stop and review** while matching, to work with whatever has been matched so far.
+- **Export .csv** to download the full track-by-track match list, including songs that weren't found.
+- The online version estimates how much of YouTube's daily quota a copy will use before you start.
+
 Each track is searched on the other service and scored on title, artist and duration (plus ISRC
 codes when both sides have them). Noise like `(Official Video)`, `- Remastered 2011` and `feat. X`
 is ignored, and live, remix, acoustic and similar versions are kept apart from the originals.
@@ -82,12 +91,14 @@ playclone list spotify                                     # playlist ids and na
 playclone clone --from spotify --to ytmusic "Road Trip"    # by name or id
 playclone clone --from ytmusic --to spotify --liked        # liked songs → new playlist
 playclone clone --from spotify --to ytmusic --all --dry-run
+playclone clone --from spotify --to ytmusic "Road Trip" --update  # add only new songs to the earlier copy
 ```
 
 If you change `--port`, the Spotify redirect URI must use the same port.
 
 Matches, including ones you pick by hand in the app, are cached in
 `~/.config/playclone/match-cache.json`, so re-runs and overlapping playlists don't search again.
+Which playlist went where is remembered in `clones.json`, so the app and `--update` find earlier copies.
 
 ## Development
 

@@ -72,9 +72,12 @@ class YTMusicProvider:
         res = self.yt.create_playlist(name, re.sub(r"[<>]", "", description)[:5000], privacy_status="PRIVATE")
         if not isinstance(res, str):
             raise RuntimeError(f"YouTube Music refused to create the playlist: {res}")
-        for i in range(0, len(track_ids), 100):
-            self.yt.add_playlist_items(res, track_ids[i : i + 100], duplicates=True)
+        self.add_tracks(res, track_ids)
         return res
+
+    def add_tracks(self, playlist_id: str, track_ids: list[str]) -> None:
+        for i in range(0, len(track_ids), 100):
+            self.yt.add_playlist_items(playlist_id, track_ids[i : i + 100], duplicates=True)
 
 
 def _count(value) -> int | None:

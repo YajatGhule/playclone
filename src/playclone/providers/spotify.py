@@ -102,6 +102,9 @@ class SpotifyProvider:
 
     def create_playlist(self, name: str, description: str, track_ids: list[str]) -> str:
         pl = self.sp.current_user_playlist_create(name, public=False, description=description[:300])
-        for i in range(0, len(track_ids), 100):
-            self.sp.playlist_add_items(pl["id"], [f"spotify:track:{t}" for t in track_ids[i : i + 100]])
+        self.add_tracks(pl["id"], track_ids)
         return pl["id"]
+
+    def add_tracks(self, playlist_id: str, track_ids: list[str]) -> None:
+        for i in range(0, len(track_ids), 100):
+            self.sp.playlist_add_items(playlist_id, [f"spotify:track:{t}" for t in track_ids[i : i + 100]])

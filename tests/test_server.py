@@ -130,3 +130,44 @@ def test_track_roundtrip():
 
     t = Track("a", "b", ("c", "d"), "e", 10, "ISRC")
     assert _track_from(_track_json(t)) == t
+
+
+def test_second_run_offers_earlier_copy_and_updates_it(server):
+    app, base = server
+    _, job = call(base + "/api/jobs", {"src": "spotify", "dst": "ytmusic", "playlists": [{"id": "p", "name": "Mix"}]})
+    job = wait_for(base, job["id"], "review")
+    assert job["playlists"][0]["previous_id"] is None
+    call(f"{base}/api/jobs/{job['id']}/create", {"playlists": [{"index": 0, "name": "Mix", "track_ids": ["y1"]}]})
+    job = wait_for(base, job["id"], "done")
+    copy_id = job["playlists"][0]["playlist_id"]
+
+    _, job2 = call(base + "/api/jobs", {"src": "spotify", "dst": "ytmusic", "playlists": [{"id": "p", "name": "Mix"}]})
+    job2 = wait_for(base, job2["id"], "review")
+    assert job2["playlists"][0]["previous_id"] == copy_id
+    assert copy_id in [p["id"] for p in job2["dst_playlists"]]
+    call(f"{base}/api/jobs/{job2['id']}/create",
+         {"playlists": [{"index": 0, "name": "x", "track_ids": ["y1", "y2"], "target_id": copy_id}]})
+    job2 = wait_for(base, job2["id"], "done")
+    pl = job2["playlists"][0]
+    assert pl["updated"] and (pl["created_count"], pl["already_there"]) == (1, 1)
+    assert app.providers["ytmusic"].added == [(copy_id, ["y2"])]
+    assert len(app.providers["ytmusic"].created) == 1
+
+
+def test_stop_returns_partial_review(server):
+    app, base = server
+    slow = app.providers["ytmusic"]
+    real = slow.search
+
+    def search(track):
+        time.sleep(0.15)
+        return real(track)
+
+    slow.search = search
+    _, job = call(base + "/api/jobs", {"src": "spotify", "dst": "ytmusic", "playlists": [{"id": "p", "name": "Mix"}]})
+    time.sleep(0.2)
+    assert call(f"{base}/api/jobs/{job['id']}/stop", {})[0] == 200
+    job = wait_for(base, job["id"], "review")
+    pl = job["playlists"][0]
+    assert 0 < len(pl["matches"]) < pl["total"]
+    assert job["warning"].startswith("Stopped early")

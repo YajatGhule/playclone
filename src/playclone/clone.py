@@ -43,6 +43,40 @@ class MatchCache:
             self.path.write_text(json.dumps(self.data, indent=1, ensure_ascii=False))
 
 
+class CloneMemory:
+    """Remembers which destination playlist each source playlist was cloned into, so re-runs can update it."""
+
+    def __init__(self, path: Path | None):
+        self.path = path
+        self.data: dict[str, str] = {}
+        if path and path.exists():
+            try:
+                self.data = json.loads(path.read_text())
+            except json.JSONDecodeError:
+                self.data = {}
+
+    @staticmethod
+    def key(src: str, playlist_id: str, dst: str) -> str:
+        return f"{src}:{playlist_id}>{dst}"
+
+    def get(self, src: str, playlist_id: str, dst: str) -> str | None:
+        return self.data.get(self.key(src, playlist_id, dst))
+
+    def put(self, src: str, playlist_id: str, dst: str, target_id: str) -> None:
+        self.data[self.key(src, playlist_id, dst)] = target_id
+        if self.path:
+            self.path.write_text(json.dumps(self.data, indent=1))
+
+
+def add_missing(dst: Provider, target_id: str, track_ids: list[str]) -> tuple[int, int]:
+    """Add the tracks not already in ``target_id``. Returns (added, already_there)."""
+    existing = {t.id for t in dst.get_tracks(target_id)}
+    new = [t for t in dict.fromkeys(track_ids) if t not in existing]
+    if new:
+        dst.add_tracks(target_id, new)
+    return len(new), len(set(track_ids)) - len(new)
+
+
 def match_tracks(
     tracks: list[Track],
     src: Provider,
@@ -50,9 +84,12 @@ def match_tracks(
     cache: MatchCache,
     threshold: float = 0.75,
     on_progress: Callable[[int, int, Match], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> list[Match]:
     matches = []
     for i, track in enumerate(tracks, 1):
+        if should_stop and should_stop():
+            break
         key = MatchCache.key(src.name, dst.name, track)
         cached = cache.get(key)
         if cached:
@@ -80,10 +117,17 @@ def clone_playlist(
     threshold: float = 0.75,
     dry_run: bool = False,
     on_progress: Callable[[int, int, Match], None] | None = None,
+    target_id: str | None = None,
 ) -> CloneResult:
+    """Clone into a new playlist, or with ``target_id`` add only the missing tracks to an existing one."""
     tracks = src.get_tracks(playlist_id)
-    result = CloneResult(name, match_tracks(tracks, src, dst, cache, threshold, on_progress))
+    result = CloneResult(name, match_tracks(tracks, src, dst, cache, threshold, on_progress), updated=bool(target_id))
     if not dry_run:
         ids = list(dict.fromkeys(m.target.id for m in result.matched))  # dedupe, keep order
-        result.playlist_id = dst.create_playlist(name, description, ids)
+        if target_id:
+            result.added, result.already_there = add_missing(dst, target_id, ids)
+            result.playlist_id = target_id
+        else:
+            result.playlist_id = dst.create_playlist(name, description, ids)
+            result.added = len(ids)
     return result

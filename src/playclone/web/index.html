@@ -217,6 +217,7 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1
 <div class="actionbar" id="actionbar"><div class="inner">
   <div class="summary" id="actionSummary"></div>
   <button class="ghost" id="startOver">Start over</button>
+  <button id="stopBtn" hidden>Stop and review</button>
   <button class="primary" id="createBtn">Create playlists</button>
 </div></div>
 
@@ -428,7 +429,7 @@ function renderPicker() {
       <label class="slider" title="How sure playclone must be before it accepts a match">Match strictness
         <input type="range" id="thr" min="0.6" max="0.95" step="0.05" value="${S.threshold}"><b id="thrVal">${Math.round(S.threshold * 100)}%</b></label>
       <div class="spacer"></div>
-      <span class="hint" style="color:var(--muted);font-size:13px">${S.selected.size} selected</span>
+      <span class="hint" style="color:var(--muted);font-size:13px">${S.selected.size} selected${quotaHint()}</span>
       <button class="primary" id="matchBtn" ${!S.selected.size || busy ? "disabled" : ""}>${busy && S.job.status === "matching" ? '<span class="spin"></span> Matching…' : "Find matches"}</button>
     </div>`;
 
@@ -441,10 +442,22 @@ function renderPicker() {
   $("#thr").oninput = e => { S.threshold = +e.target.value; $("#thrVal").textContent = Math.round(S.threshold * 100) + "%"; };
   el.querySelectorAll("[data-pid]").forEach(cb => cb.onchange = () => {
     cb.checked ? S.selected.add(cb.dataset.pid) : S.selected.delete(cb.dataset.pid);
-    $(".foot .hint", el).textContent = `${S.selected.size} selected`;
+    $(".foot .hint", el).innerHTML = `${S.selected.size} selected${quotaHint()}`;
     $("#matchBtn").disabled = !S.selected.size || busy;
   });
   $("#matchBtn").onclick = startJob;
+}
+
+// Online version only: rough YouTube API cost of copying the selection into YouTube.
+function quotaHint() {
+  if (!WEB || S.dst !== "ytmusic" || !S.selected.size || !S.status?.ytmusic?.quota) return "";
+  const lists = (S.playlists[S.src] || []).filter(p => S.selected.has(p.id));
+  const songs = lists.reduce((n, p) => n + (p.count || 0), 0), unknown = lists.some(p => p.count == null);
+  const q = S.status.ytmusic.quota, left = Math.max(0, q.limit - q.used);
+  const need = songs * 151; // search 100 + details 1 + insert 50, minus anything already matched before
+  const fits = Math.floor(left / 151);
+  return ` · up to ~${need.toLocaleString()}${unknown ? "+" : ""} of ${left.toLocaleString()} YouTube units left today` +
+    (need > left || unknown ? ` <span style="color:var(--warn)">(about ${fits} new songs fit; the rest can be resumed tomorrow)</span>` : "");
 }
 
 /* ---------- job ---------- */
@@ -453,7 +466,7 @@ async function startJob() {
   const picks = lists.filter(p => S.selected.has(p.id)).map(p => ({ id: p.id, name: p.name, description: p.description || "" }));
   try {
     S.job = await api("/api/jobs", { src: S.src, dst: S.dst, playlists: picks, threshold: S.threshold });
-    S.review = []; render(); poll();
+    S.review = []; $("#stopBtn").disabled = false; render(); poll();
     $("#stepReview").scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (err) { toast(err.message); }
 }
@@ -465,7 +478,7 @@ async function poll() {
   try {
     const prev = S.job.status;
     S.job = await api(`/api/jobs/${S.job.id}`);
-    if (S.job.status === "review" && prev !== "review") initReview();
+    if (S.job.status === "review" && S.review.length !== S.job.playlists.length) initReview();
     if (WEB && S.job.status !== prev) { S.status = await api("/api/status"); renderAccounts(); renderPending(); } // quota meter
     renderReview(); renderPicker();
     if (["matching", "creating"].includes(S.job.status)) pollTimer = setTimeout(poll, 600);
@@ -475,7 +488,8 @@ async function poll() {
 
 function initReview() {
   S.review = S.job.playlists.map(pl => ({
-    include: pl.matches.map(m => !!m.target), override: {}, tab: "all", name: pl.new_name, finder: null, enabled: pl.total > 0,
+    include: pl.matches.map(m => !!m.target), override: {}, tab: "all", name: pl.new_name, finder: null,
+    enabled: pl.matches.length > 0, target: pl.previous_id || "",
   }));
 }
 
@@ -510,14 +524,18 @@ function renderReview() {
     if (job.status === "creating" || job.status === "done") {
       const st = pl.state;
       const line = st === "created"
-        ? `<span class="ok">✓ Created with ${pl.created_count} tracks</span><a class="btn primary" href="${esc(pl.url)}" target="_blank" rel="noopener">Open in ${dst} ↗</a>`
+        ? `<span class="ok">✓ ${pl.updated ? `Added ${pl.created_count} new song${pl.created_count === 1 ? "" : "s"}${pl.already_there ? ` (${pl.already_there} already there)` : ""}` : `Created with ${pl.created_count} tracks`}</span><a class="btn primary" href="${esc(pl.url)}" target="_blank" rel="noopener">Open in ${dst} ↗</a>`
         : st === "error" ? `<span class="err">Failed: ${esc(pl.error)}</span>`
         : st === "skipped" ? `<span style="color:var(--muted)">Skipped</span>`
         : `<span><span class="spin"></span>&nbsp; Creating…</span>`;
       return `<div class="card plcard"><div class="plhead"><div class="title"><strong>${esc(pl.new_name)}</strong>
-        <span class="src">from ${esc(pl.name)} on ${NAMES[job.src]}</span></div></div><div class="done">${line}</div></div>`;
+        <span class="src">${pl.updated ? "updated " : ""}from ${esc(pl.name)} on ${NAMES[job.src]}</span></div></div><div class="done">${line}</div></div>`;
     }
     // review
+    if (pl.state === "stopped") {
+      return `<div class="card plcard"><div class="plhead"><div class="title"><strong>${esc(pl.name)}</strong>
+        <span class="src">Not checked: you stopped before this playlist was reached.</span></div></div></div>`;
+    }
     const rows = pl.matches.map((m, i) => ({ m, i, t: targetOf(pl, r, i) }));
     const unmatched = rows.filter(x => !x.t).length;
     const unsure = rows.filter(x => x.t && !r.override[x.i] && x.m.score < 0.85).length;
@@ -542,13 +560,22 @@ function renderReview() {
     return `<div class="card plcard">
       <div class="plhead">
         <label class="row" style="flex:none"><input type="checkbox" data-plon="${pi}" ${r.enabled ? "checked" : ""} style="width:17px;height:17px;accent-color:var(--accent)" aria-label="Create this playlist"></label>
-        <div class="title"><span class="src">${esc(pl.name)} on ${NAMES[job.src]} → new private playlist on ${dst}:</span>
-          <input type="text" class="newname" id="name-${pi}" data-name="${pi}" value="${esc(r.name)}" aria-label="New playlist name"></div>
+        <div class="title"><span class="src">${esc(pl.name)} on ${NAMES[job.src]} → ${dst}:</span>
+          <div class="row">
+            <select data-target="${pi}" aria-label="Destination playlist">
+              <option value="">New private playlist</option>
+              ${(job.dst_playlists || []).map(d => `<option value="${esc(d.id)}" ${d.id === r.target ? "selected" : ""}>Add new songs to: ${esc(d.name)}${d.id === pl.previous_id ? " (earlier copy)" : ""}</option>`).join("")}
+            </select>
+            ${r.target ? `<span class="src">Songs already in it are skipped.</span>`
+              : `<input type="text" class="newname" id="name-${pi}" data-name="${pi}" value="${esc(r.name)}" aria-label="New playlist name">`}
+          </div></div>
         <div class="stats"><span class="stat ok">${chosen} adding</span>${unsure ? `<span class="stat warn">${unsure} unsure</span>` : ""}${unmatched ? `<span class="stat bad">${unmatched} not found</span>` : ""}</div>
       </div>
       <div class="tabs">
         ${[["all", `All ${rows.length}`], ["issues", `Needs a look ${unmatched + unsure}`], ["matched", `Matched ${rows.length - unmatched}`]]
           .map(([k, label]) => `<button class="small" data-tab="${pi}:${k}" aria-pressed="${r.tab === k}">${label}</button>`).join("")}
+        <span style="flex:1"></span>
+        <button class="small ghost" data-csv="${pi}" title="Download every track with its match as a spreadsheet">Export .csv</button>
       </div>
       <div class="tracks">${tracks}</div></div>`;
   }).join("");
@@ -565,6 +592,8 @@ function bindReview() {
   el.querySelectorAll("[data-inc]").forEach(cb => cb.onchange = () => { const [pi, i] = parse(cb.dataset.inc); S.review[pi].include[i] = cb.checked; renderReview(); });
   el.querySelectorAll("[data-plon]").forEach(cb => cb.onchange = () => { S.review[+cb.dataset.plon].enabled = cb.checked; renderActionbar(); });
   el.querySelectorAll("[data-name]").forEach(inp => inp.oninput = () => { S.review[+inp.dataset.name].name = inp.value; });
+  el.querySelectorAll("[data-target]").forEach(sel => sel.onchange = () => { S.review[+sel.dataset.target].target = sel.value; renderReview(); });
+  el.querySelectorAll("[data-csv]").forEach(b => b.onclick = () => exportCsv(+b.dataset.csv));
   el.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { const [pi, tab] = b.dataset.tab.split(":"); S.review[+pi].tab = tab; S.review[+pi].finder = null; renderReview(); });
   el.querySelectorAll("[data-closefind]").forEach(b => b.onclick = () => { S.review[+b.dataset.closefind].finder = null; renderReview(); });
   el.querySelectorAll("[data-find]").forEach(b => b.onclick = () => {
@@ -603,25 +632,40 @@ function plan() {
     });
     if (!ids.length) return;
     tracks += ids.length;
-    playlists.push({ index: pi, name: r.name, track_ids: ids });
+    playlists.push({ index: pi, name: r.name, track_ids: ids, target_id: r.target || null });
   });
   return { playlists, manual, tracks };
 }
 
 function renderActionbar() {
   const bar = $("#actionbar"), job = S.job;
-  bar.classList.toggle("show", !!job && job.status !== "matching");
+  bar.classList.toggle("show", !!job);
   if (!job) return;
   const btn = $("#createBtn");
+  $("#stopBtn").hidden = job.status !== "matching";
+  $("#startOver").hidden = job.status === "matching" || job.status === "creating";
+  if (job.status === "matching") {
+    const done = job.playlists.reduce((n, pl) => n + pl.done, 0), total = job.playlists.reduce((n, pl) => n + (pl.total || 0), 0);
+    $("#actionSummary").innerHTML = `<span class="spin"></span>&nbsp; Matching <b>${done}</b>${total ? ` of ${total}` : ""} songs… You can stop and review what's matched so far.`;
+    btn.hidden = true;
+    return;
+  }
   if (job.status === "review") {
     const p = plan();
-    $("#actionSummary").innerHTML = `Create <b>${p.playlists.length}</b> private playlist${p.playlists.length === 1 ? "" : "s"} with <b>${p.tracks}</b> tracks on ${NAMES[job.dst]}`;
-    btn.hidden = false; btn.disabled = !p.playlists.length; btn.textContent = "Create playlists";
+    const upd = p.playlists.filter(x => x.target_id).length, mk = p.playlists.length - upd;
+    const parts = [];
+    if (mk) parts.push(`create <b>${mk}</b> private playlist${mk === 1 ? "" : "s"}`);
+    if (upd) parts.push(`update <b>${upd}</b> existing`);
+    $("#actionSummary").innerHTML = parts.length
+      ? `${parts.join(" and ").replace(/^./, c => c.toUpperCase())} with <b>${p.tracks}</b> tracks on ${NAMES[job.dst]}`
+      : "Nothing selected.";
+    btn.hidden = false; btn.disabled = !p.playlists.length; btn.textContent = mk ? "Create playlists" : "Update playlists";
+    $("#stopBtn").hidden = true; $("#startOver").hidden = false;
   } else if (job.status === "creating") {
     $("#actionSummary").innerHTML = `<span class="spin"></span>&nbsp; Creating playlists on ${NAMES[job.dst]}…`; btn.hidden = true;
   } else if (job.status === "done") {
     const ok = job.playlists.filter(p => p.state === "created").length;
-    $("#actionSummary").innerHTML = `<b>${ok}</b> playlist${ok === 1 ? "" : "s"} created on ${NAMES[job.dst]}.`; btn.hidden = true;
+    $("#actionSummary").innerHTML = `<b>${ok}</b> playlist${ok === 1 ? "" : "s"} ${job.playlists.some(p => p.updated) ? "saved" : "created"} on ${NAMES[job.dst]}.`; btn.hidden = true;
   } else {
     $("#actionSummary").textContent = "Something went wrong."; btn.hidden = true;
   }
@@ -632,6 +676,25 @@ $("#createBtn").onclick = async () => {
   try { S.job = await api(`/api/jobs/${S.job.id}/create`, { playlists: p.playlists, manual: p.manual }); renderReview(); poll(); }
   catch (err) { toast(err.message); }
 };
+$("#stopBtn").onclick = async () => {
+  try { await api(`/api/jobs/${S.job.id}/stop`, {}); $("#stopBtn").disabled = true; } catch (err) { toast(err.message); }
+};
+
+function exportCsv(pi) {
+  const pl = S.job.playlists[pi], r = S.review[pi];
+  const cell = v => /[",\n]/.test(String(v ?? "")) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? "");
+  const rows = [["Source title", "Source artists", "Duration", `${NAMES[S.job.dst]} title`, `${NAMES[S.job.dst]} artists`, "Score", "Status"]];
+  pl.matches.forEach((m, i) => {
+    const t = targetOf(pl, r, i);
+    const status = !t ? (m.skipped ? "not searched" : "not found") : !r.include[i] ? "excluded" : r.override[i] ? "picked by hand" : m.score < 0.85 ? "unsure" : "matched";
+    rows.push([m.source.title, artists(m.source), fmtDur(m.source.duration_s), t?.title, t ? artists(t) : "", t && !r.override[i] ? m.score : "", status]);
+  });
+  const blob = new Blob(["\ufeff" + rows.map(row => row.map(cell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `${pl.name.replace(/[\\/:*?"<>|]+/g, "_")} - playclone.csv` });
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
 $("#startOver").onclick = () => {
   if (S.job?.status === "creating") return;
   S.job = null; S.review = []; clearTimeout(pollTimer); render(); window.scrollTo({ top: 0, behavior: "smooth" });
